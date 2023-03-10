@@ -2,6 +2,8 @@
 
 Search in Google Lens in lingo!
 
+Tired of irrelevant results of reverse image search? Yeah, search results can be VERY different!
+
 Lingolens allows:
 - search image in Google Lens for several languages (RU/EN/PL for now), excluding known results
 - generate one simple HTML report with all the results
@@ -46,3 +48,6 @@ Skipped 1 already known images
 ## Credits
 
 Thanks to BLACK for inspiration and support!
+
+Designed and developed for solving tasks on [OSINT investigation forum](https://t.me/+GMxoDCvLO0k0MWRi).
+
