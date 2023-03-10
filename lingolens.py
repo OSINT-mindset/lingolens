@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+import os
 import random
 import re
 import sys
@@ -82,6 +83,8 @@ def get_base64_image(url):
 
 
 if __name__ == '__main__':
+    langs_config = 'langs.txt'
+
     if len(sys.argv) == 1:
         print('./lingolens.py <image filename>')
         sys.exit(1)
@@ -91,50 +94,55 @@ if __name__ == '__main__':
 
     all_pics = []
 
-    langs = [
-        'ru',
-        'en',
-        'pl'
-    ]
+    if os.path.exists(langs_config):
+        with open(langs_config) as f:
+            langs = f.read().splitlines()
+        print('Loaded languages: '+', '.join(langs))
+    else:
+        langs = [
+            'ru',
+            'en',
+            'pl',
+        ]
 
     html_text = """
-        <html>
-        <title>Results of Google Lens search</title>
-        <style>
-            html{
-              background-color: #d0d2d2;
-            }
-            p {
-              display: inline-block;
-              text-overflow: ellipsis;
-              margin: 10px;
-            }
-            img {
-              max-width: 400px;
-              max-height: 400px;            
-            }
-            img.result {
-              display: block;
-              border: 1px solid black;
-            }
-            img.target {
-              display: block;
-              position: fixed;
-              right: 20;
-              bottom: 20;
-              border: 2px solid red;
-            }
-            a {
-              width: 400px;
-              overflow: hidden;
-              display: block;
-              white-space: nowrap;
-            }
-            a span {
-                color: red;
-            }
-        </style>
-        <body>
+<html>
+<title>Results of Google Lens search</title>
+<style>
+    html{
+      background-color: #d0d2d2;
+    }
+    p {
+      display: inline-block;
+      text-overflow: ellipsis;
+      margin: 10px;
+    }
+    img {
+      max-width: 400px;
+      max-height: 400px;
+    }
+    img.result {
+      display: block;
+      border: 1px solid black;
+    }
+    img.target {
+      display: block;
+      position: fixed;
+      right: 20;
+      bottom: 20;
+      border: 2px solid red;
+    }
+    a {
+      width: 400px;
+      overflow: hidden;
+      display: block;
+      white-space: nowrap;
+    }
+    a span {
+        color: red;
+    }
+</style>
+<body>
     """
 
     img_type = 'image/png' if filename.endswith('.png') else 'image/jpeg'

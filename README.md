@@ -2,10 +2,10 @@
 
 Search in Google Lens in lingo!
 
-Tired of irrelevant results of reverse image search? Yeah, search results can be VERY different!
+Tired of irrelevant results of reverse image search? Yeah, search results can be VERY different because of your language environment!
 
 Lingolens allows:
-- search image in Google Lens for several languages (RU/EN/PL for now), excluding known results
+- search image in Google Lens for several languages (RU/EN/PL by default), excluding known results
 - generate one simple HTML report with all the results
 - compare target image with result images!
 
@@ -39,9 +39,18 @@ Found 60 results
 Skipped 1 already known images
 ```
 
+You should specify languages in file `langs.txt` in the following format:
+```
+ru
+en
+pl
+```
+
+The full list of supported languages is [here](https://developers.google.com/custom-search/docs/xml_results_appendices?hl=en#interfaceLanguages).
+
 ## TODO
 
-- [ ] Customization of language list for a search (simple config file)
+- [x] Customization of language list for a search (simple config file)
 - [ ] Language filter in a report
 - [ ] Standalone exe-file for Windows
 
