@@ -25,12 +25,23 @@ pip3 install -r requirements.txt
 
 ```sh
 ./lingolens.py example.jpg
+
+Searching for example.jpg...
+Searching in RU language...
+Found 60 results
+Searching in EN language...
+Found 60 results
+Skipped 1 already known images
+Searching in PL language...
+Found 60 results
+Skipped 1 already known images
 ```
 
 ## TODO
 
-- [ ] Customization of language list for a search
+- [ ] Customization of language list for a search (simple config file)
 - [ ] Language filter in a report
+- [ ] Standalone exe-file for Windows
 
 ## Credits
 
