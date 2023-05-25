@@ -56,7 +56,7 @@ def get_lens_previews(image_filename, lang):
     search_url = get_google_lens_url(f, lang)
 
     results_html = requests.get(search_url).text
-    matches = re.findall(r'"https://www.google.com/imgres\?imgurl.+?"', results_html)
+    matches = re.findall(r'imgres(?:[^"\s]*&)*([^"&\s]+)', results_html)
     if matches:
         return matches
 
@@ -172,5 +172,5 @@ if __name__ == '__main__':
     for p in all_pics:
         html_text += f"<p><img class='result' src='{p.url}'><a href='{p.site}'><span>[{p.lang.upper()}]</span>{p.site}</a>\n"
 
-    with open('report.html', 'w') as f:
+    with open('report.html', 'w', encoding='utf-8') as f:
         f.write(html_text)
