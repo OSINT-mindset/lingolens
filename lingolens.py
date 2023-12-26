@@ -1,176 +1,192 @@
 #!/usr/bin/env python3
-import math
 import os
-import random
-import re
 import sys
+from time import time, sleep
 from base64 import b64encode
-from urllib.parse import unquote
-import requests
+from requests import post
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse, parse_qs, unquote, quote
 
 
-class LensPic:
-    url: str
-    site: str
-    lang: str
-
-    def __init__(self, u, s, l):
-        self.url = u
-        self.site = s
-        self.lang = l
-
-    def __hash__(self):
-        return id(self) if not self.url else hash(self.url+self.site)
-
-    def __eq__(self, other):
-        return self.url+self.site == other.url+other.site
-
-
-# https://github.com/typeling1578/Search-on-Google-Lens/blob/af04f2c01dd6f93b163b561807cb4597813c3ab4/background.js
-def generateRandomString(n):
-    s = "abcdefghijklmnopqrstuvwxyz0123456789"
-    str = ""
-    for _ in range(n):
-        str += s[math.floor(random.random() * len(s))]
-    return str
-
-
-def get_google_lens_url(imageFile, lang):
-    body = {
-        "image_url": "https://" + generateRandomString(12) + ".com/" + generateRandomString(12),
-        "sbisrc": "Chromium 98.0.4725.0 Windows"
+def post_image_and_get_response_html(image_file_path, lang):
+    headers = {
+        'Cookie': 'NID=511=eoiYVbD3qecDKQrHrtT9_jFCqvrNnL-GSi7lPJANAlHOoYlZOhFjOhPvcc'
+                  '-43ZSGmBx_L5D_Irknb8HJvUMo41sCh1i0homN3Taqg2z7mdjnu3AQe-PbpKAyKE4zW1'
+                  '-N6niKTJAMkV6Jq4AWPwp6txH_c24gjt7fU3LWAfNIezA'
     }
-    files = {'encoded_image': imageFile}
-    language = f'&hl={lang}&lr={lang}'
-    result = requests.post(f'https://lens.google.com/upload?{language}&ep=ccm&s=&st=' + generateRandomString(12), data=body, files=files)
-    if result.status_code == 200:
-        # print(result.text)
-        matches = re.findall(r"https?:\/\/[-_.!~*\'()a-zA-Z0-9;\/?:\@&=+\$,%#]+", result.text)
-        if matches:
-            url = matches[0]
-            return url
+    timestamp = int(time() * 1000)
+    url = f'https://lens.google.com/v3/upload?hl={lang}&re=df&stcs={timestamp}&vpw=1500&vph=1500'
+
+    with open(image_file_path, 'rb') as image_file:
+        files = {'encoded_image': (image_file_path, image_file, 'image/jpeg')}
+        response = post(url, headers=headers, files=files)
+    return response.text if response.status_code == 200 else None
 
 
-def get_lens_previews(image_filename, lang):
-    f = open(image_filename, mode='rb')
-    search_url = get_google_lens_url(f, lang)
+def extract_image_urls(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+    image_urls = []
+    for div in soup.find_all('div', class_='Vd9M6'):
+        action_url = div.get('data-action-url')
+        if action_url:
+            parsed_url = urlparse(action_url)
+            query_params = parse_qs(parsed_url.query)
+            img_url = unquote(query_params.get('imgurl', [None])[0])
+            img_ref_url = unquote(query_params.get('imgrefurl', [None])[0])
+            image_urls.append((img_url, img_ref_url))
 
-    results_html = requests.get(search_url).text
-    matches = re.findall(r'imgres(?:[^"\s]*&)*([^"&\s]+)', results_html)
-    if matches:
-        return matches
-
-    return []
-
-
-def get_site_preview_urls_pair(lens_preview_url):
-    decoded_url = lens_preview_url.encode().decode('unicode-escape')
-
-    preview_url_str = re.search(r'.*imgurl=(.+?)&.*', decoded_url).groups(0)
-    preview_url = unquote(preview_url_str[0])
-
-    site_url = re.search(r'.*imgrefurl=(.+?)&.*', decoded_url).groups(0)[0]
-    return (site_url, preview_url)
+    return image_urls
 
 
-def get_base64_image(url):
-    r = requests.get(url, stream=True)
-    img_uri = ("data:" +
-           r.headers['Content-Type'] + ";" +
-           "base64," + b64encode(r.content).decode())
+def normalize_url(url):
+    parsed_url = urlparse(url)
+    url_path = os.path.dirname(parsed_url.path)
+    normalized_path = quote(url_path)
+    normalized_url = f'{parsed_url.scheme}://{parsed_url.netloc}{normalized_path}'
+    return normalized_url
 
-    return img_uri
+
+def filter_unique_images(image_urls, processed_urls, lang):
+    unique_images = []
+    for img_url, img_ref_url in image_urls:
+        normalized_url = normalize_url(img_url)
+        if normalized_url not in processed_urls:
+            processed_urls.add(normalized_url)
+            unique_images.append((img_url, img_ref_url, lang))
+    return unique_images
+
+
+def read_langs(file_path):
+    if os.path.exists(file_path):
+        with open(file_path) as file:
+            return [line.strip() for line in file.readlines()]
+    else:
+        print(f"Language file not found: {file_path}")
+        return None
+
+
+def get_base64_image_uri(image_file_path):
+    img_type = 'image/png' if image_file_path.endswith('.png') else 'image/jpeg'
+    with open(image_file_path, 'rb') as image_file:
+        img_encoded = b64encode(image_file.read()).decode()
+        return f"data:{img_type};base64,{img_encoded}"
+
+
+def generate_html_report(image_data, target_image_uri):
+    print("Generating HTML report...")
+    languages = set(lang for _, _, lang in image_data)
+    css_style = """
+        html{
+            background-color: #d0d2d2;
+        }
+        body {
+            margin-top: 30px;
+        }
+        p {
+            display: inline-block;
+            text-overflow: ellipsis;
+            margin: 10px;
+        }
+        img {
+            max-width: 400px;
+            max-height: 400px;
+        }
+        img.result {
+            display: block;
+            border: 1px solid black;
+        }
+        img.target {
+            display: block;
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            border: 2px solid red;
+        }
+        a {
+            width: 400px;
+            overflow: hidden;
+            display: block;
+            white-space: nowrap;
+        }
+        a span {
+            color: red;
+        }
+        .result-item {
+            display: inline-block;
+        }
+        select {
+            position: absolute;
+            padding: 10px;
+            top: 5px;
+            left: 5px;
+        }
+        """
+    script = """
+        <script>
+        function filterByLanguage(lang) {
+            document.querySelectorAll('.result-item').forEach(item => {
+                item.style.display = item.getAttribute('data-lang') === lang || lang === 'all' ? 'inline-block' : 'none';
+            });
+        }
+        </script>
+        """
+    html_content = f"""<html>
+        <head>
+            <meta charset='UTF-8'>
+            <title>Results of Google Lens search</title>
+            <style>{css_style}</style>
+        </head>
+        <body>
+            <select onchange="filterByLanguage(this.value)">
+                <option value="all">All Languages</option>
+                {''.join(f'<option value="{lang}">{lang.upper()}</option>' for lang in languages)}
+            </select>
+            {script}
+            <img class="target" src="{target_image_uri}">
+        """
+    for img_url, img_ref_url, lang in image_data:
+        html_content += (f"<div class='result-item' data-lang='{lang}'><p>"
+                         f"<a href='{img_url}'><img class='result' src='{img_url}' alt='Image'></a>"
+                         f"<a href='{img_ref_url}'><span>[{lang.upper()}]</span> {img_ref_url}</a></p></div>")
+
+    html_content += "</body></html>"
+    return html_content
+
+
+def main(image_file_path):
+    print(f"Starting analysis for '{image_file_path}'...")
+    sleep(1.5)
+    langs = read_langs('langs.txt') or ['ru', 'en', 'fr']
+    print(f"Languages for analysis: {', '.join(langs)}")
+
+    if not os.path.exists(image_file_path):
+        print(f"File not found: {image_file_path}")
+        return
+
+    langs = read_langs('langs.txt') or ['ru', 'en', 'pl']
+    processed_urls = set()
+    all_images = set()
+
+    for lang in langs:
+        html_content = post_image_and_get_response_html(image_file_path, lang)
+        if html_content:
+            image_urls = extract_image_urls(html_content)
+            unique_images = filter_unique_images(image_urls, processed_urls, lang)
+            all_images.update(unique_images)
+            print(f"Found {len(unique_images)} results for {lang.upper()} language")
+
+    target_image_uri = get_base64_image_uri(image_file_path)
+    report_html = generate_html_report(all_images, target_image_uri)
+    print("Report generated.")
+
+    with open('report.html', 'w', encoding='utf-8') as file:
+        file.write(report_html)
 
 
 if __name__ == '__main__':
-    langs_config = 'langs.txt'
-
-    if len(sys.argv) == 1:
-        print('./lingolens.py <image filename>')
+    if len(sys.argv) < 2:
+        print('Usage: ./lingolens.py <image filename>')
         sys.exit(1)
 
-    filename = sys.argv[1]
-    print(f'Searching for {filename}...')
-
-    all_pics = []
-
-    if os.path.exists(langs_config):
-        with open(langs_config) as f:
-            langs = f.read().splitlines()
-        print('Loaded languages: '+', '.join(langs))
-    else:
-        langs = [
-            'ru',
-            'en',
-            'pl',
-        ]
-
-    html_text = """
-<html>
-<title>Results of Google Lens search</title>
-<style>
-    html{
-      background-color: #d0d2d2;
-    }
-    p {
-      display: inline-block;
-      text-overflow: ellipsis;
-      margin: 10px;
-    }
-    img {
-      max-width: 400px;
-      max-height: 400px;
-    }
-    img.result {
-      display: block;
-      border: 1px solid black;
-    }
-    img.target {
-      display: block;
-      position: fixed;
-      right: 20;
-      bottom: 20;
-      border: 2px solid red;
-    }
-    a {
-      width: 400px;
-      overflow: hidden;
-      display: block;
-      white-space: nowrap;
-    }
-    a span {
-        color: red;
-    }
-</style>
-<body>
-    """
-
-    img_type = 'image/png' if filename.endswith('.png') else 'image/jpeg'
-
-    with open(filename, 'rb') as image_file:
-        img_decoded = b64encode(image_file.read()).decode()
-        img_uri = f"data:{img_type};base64,{img_decoded}"
-        html_text += f'<img class="target" src="{img_uri}">'
-
-    for l in langs:
-        print(f'Searching in {l.upper()} language...')
-        previews = get_lens_previews(filename, l)
-        print(f'Found {len(previews)} results')
-
-        skipped = 0
-        for p in previews:
-            pair = get_site_preview_urls_pair(p)
-            pic = LensPic(pair[1], pair[0], l)
-            if pic not in set(all_pics):
-                all_pics.append(pic)
-            else:
-                skipped += 1
-
-        if skipped:
-            print(f'Skipped {skipped} already known images')
-
-    for p in all_pics:
-        html_text += f"<p><img class='result' src='{p.url}'><a href='{p.site}'><span>[{p.lang.upper()}]</span>{p.site}</a>\n"
-
-    with open('report.html', 'w', encoding='utf-8') as f:
-        f.write(html_text)
+    main(sys.argv[1])
+    print("Script execution completed.")
