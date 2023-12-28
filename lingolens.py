@@ -19,14 +19,21 @@ def post_image_and_get_response_html(image_file_path, lang):
 
     with open(image_file_path, 'rb') as image_file:
         files = {'encoded_image': (image_file_path, image_file, 'image/jpeg')}
-        response = post(url, headers=headers, files=files)
+        response = post(url, files=files)
     return response.text if response.status_code == 200 else None
 
 
 def extract_image_urls(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
+    divs = soup.find_all('div', class_='Vd9M6')
+
+    if not divs:
+        print("Error: The expected content is not found on the page. This might be due to a change in the website's "
+              "layout. Please report this issue for further assistance.")
+        return []
+
     image_urls = []
-    for div in soup.find_all('div', class_='Vd9M6'):
+    for div in divs:
         action_url = div.get('data-action-url')
         if action_url:
             parsed_url = urlparse(action_url)
