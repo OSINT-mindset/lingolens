@@ -17,7 +17,7 @@ Check example of search results: [report.html](report.html).
 
 ## Installation
 
-Only requests lib is required.
+Requests and bs4 are required.
 
 ```sh
 pip3 install -r requirements.txt
@@ -51,7 +51,7 @@ The full list of supported languages is [here](https://developers.google.com/cus
 ## TODO
 
 - [x] Customization of language list for a search (simple config file)
-- [ ] Language filter in a report
+- [x] Language filter in a report
 - [ ] Standalone exe-file for Windows
 
 ## Credits
