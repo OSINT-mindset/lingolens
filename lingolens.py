@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse, parse_qs, unquote, quote
 
 
-def post_image_and_get_response_html(image_file_path, lang):
+def post_image_and_get_response_html(image_file_path, file_content, lang):
     headers = {
         'Cookie': 'NID=511=eoiYVbD3qecDKQrHrtT9_jFCqvrNnL-GSi7lPJANAlHOoYlZOhFjOhPvcc'
                   '-43ZSGmBx_L5D_Irknb8HJvUMo41sCh1i0homN3Taqg2z7mdjnu3AQe-PbpKAyKE4zW1'
@@ -17,9 +17,9 @@ def post_image_and_get_response_html(image_file_path, lang):
     timestamp = int(time() * 1000)
     url = f'https://lens.google.com/v3/upload?hl={lang}&re=df&stcs={timestamp}&vpw=1500&vph=1500'
 
-    with open(image_file_path, 'rb') as image_file:
-        files = {'encoded_image': (image_file_path, image_file, 'image/jpeg')}
-        response = post(url, files=files)
+    files = {'encoded_image': (image_file_path, file_content, 'image/jpeg')}
+    response = post(url, files=files)
+
     return response.text if response.status_code == 200 else None
 
 
@@ -72,11 +72,11 @@ def read_langs(file_path):
         return None
 
 
-def get_base64_image_uri(image_file_path):
+def get_base64_image_uri(image_file_path, file_content):
     img_type = 'image/png' if image_file_path.endswith('.png') else 'image/jpeg'
-    with open(image_file_path, 'rb') as image_file:
-        img_encoded = b64encode(image_file.read()).decode()
-        return f"data:{img_type};base64,{img_encoded}"
+    img_encoded = b64encode(file_content).decode()
+
+    return f"data:{img_type};base64,{img_encoded}"
 
 
 def generate_html_report(image_data, target_image_uri):
@@ -160,34 +160,40 @@ def generate_html_report(image_data, target_image_uri):
     return html_content
 
 
-def main(image_file_path):
+def load_file_from_disk(image_file_path):
+    if not os.path.exists(image_file_path):
+        return
+
+    file_content = None
+
+    with open(image_file_path, 'rb') as f:
+        file_content = f.read()
+
+    return file_content
+
+def main(image_file_path, file_content):
     print(f"Starting analysis for '{image_file_path}'...")
     sleep(1.5)
     langs = read_langs('langs.txt') or ['ru', 'en', 'fr']
     print(f"Languages for analysis: {', '.join(langs)}")
-
-    if not os.path.exists(image_file_path):
-        print(f"File not found: {image_file_path}")
-        return
 
     langs = read_langs('langs.txt') or ['ru', 'en', 'pl']
     processed_urls = set()
     all_images = set()
 
     for lang in langs:
-        html_content = post_image_and_get_response_html(image_file_path, lang)
+        html_content = post_image_and_get_response_html(image_file_path, file_content, lang)
         if html_content:
             image_urls = extract_image_urls(html_content)
             unique_images = filter_unique_images(image_urls, processed_urls, lang)
             all_images.update(unique_images)
             print(f"Found {len(unique_images)} results for {lang.upper()} language")
 
-    target_image_uri = get_base64_image_uri(image_file_path)
+    target_image_uri = get_base64_image_uri(image_file_path, file_content)
     report_html = generate_html_report(all_images, target_image_uri)
     print("Report generated.")
 
-    with open('report.html', 'w', encoding='utf-8') as file:
-        file.write(report_html)
+    return report_html
 
 
 if __name__ == '__main__':
@@ -195,5 +201,15 @@ if __name__ == '__main__':
         print('Usage: ./lingolens.py <image filename>')
         sys.exit(1)
 
-    main(sys.argv[1])
+    filename = sys.argv[1]
+    file_content = load_file_from_disk(filename)
+
+    if not file_content:
+        print(f"File not found: {image_file_path}")
+    else:
+        report_html = main(filename, file_content)
+
+        with open('report.html', 'w', encoding='utf-8') as file:
+            file.write(report_html)
+
     print("Script execution completed.")
