@@ -32,6 +32,8 @@ def extract_image_urls(html_content):
               "layout. Please report this issue for further assistance.")
         return []
 
+    problematic_domains = ['yandex.com', 'yandex.ru', 'instagram.com', 'facebook.com', 'fbsbx.com']
+
     image_urls = []
     for div in divs:
         action_url = div.get('data-action-url')
@@ -40,6 +42,12 @@ def extract_image_urls(html_content):
             query_params = parse_qs(parsed_url.query)
             img_url = unquote(query_params.get('imgurl', [None])[0])
             img_ref_url = unquote(query_params.get('imgrefurl', [None])[0])
+
+            img_is_problematic = any([p in img_url for p in problematic_domains])
+            if img_url.startswith('x-raw-image') or img_is_problematic:
+                div_thumb = div.find(lambda tag:tag.name == "div" and 'data-thumbnail-url' in tag.attrs)
+                img_url = div_thumb.get('data-thumbnail-url')
+
             image_urls.append((img_url, img_ref_url))
 
     return image_urls
@@ -171,13 +179,11 @@ def load_file_from_disk(image_file_path):
 
     return file_content
 
-def main(image_file_path, file_content):
+def main(image_file_path, file_content, langs):
     print(f"Starting analysis for '{image_file_path}'...")
     sleep(1.5)
-    langs = read_langs('langs.txt') or ['ru', 'en', 'fr']
     print(f"Languages for analysis: {', '.join(langs)}")
 
-    langs = read_langs('langs.txt') or ['ru', 'en', 'pl']
     processed_urls = set()
     all_images = set()
 
@@ -204,10 +210,12 @@ if __name__ == '__main__':
     filename = sys.argv[1]
     file_content = load_file_from_disk(filename)
 
+    langs = read_langs('langs.txt') or ['ru', 'en', 'pl']
+
     if not file_content:
         print(f"File not found: {image_file_path}")
     else:
-        report_html = main(filename, file_content)
+        report_html = main(filename, file_content, langs)
 
         with open('report.html', 'w', encoding='utf-8') as file:
             file.write(report_html)
