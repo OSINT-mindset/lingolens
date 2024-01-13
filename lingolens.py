@@ -32,7 +32,7 @@ def extract_image_urls(html_content):
               "layout. Please report this issue for further assistance.")
         return []
 
-    problematic_domains = ['yandex.com', 'yandex.ru', 'instagram.com', 'facebook.com', 'fbsbx.com']
+    problematic_domains = ['yandex.com', 'yandex.ru', 'instagram.com', 'facebook.com', 'fbsbx.com', 'tiktok.com']
 
     image_urls = []
     for div in divs:

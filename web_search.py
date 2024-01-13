@@ -20,6 +20,8 @@ if __name__ == '__main__':
         [],
     )
 
+    st.markdown('If you have search results distorted by the presence of some object, try to remove it through with [Cleanup.pictures](https://cleanup.pictures/) and use the processed image.')
+
     uploaded_file = st.file_uploader("Choose an image file to search")
     if uploaded_file is not None:
         file_content = uploaded_file.read()
