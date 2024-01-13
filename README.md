@@ -10,6 +10,8 @@ Lingolens allows:
 - provide you a possibility to compare the target image with the result images
 - a pretty user interface is supported!
 
+The full list of supported languages and countries is [here](https://developers.google.com/custom-search/docs/xml_results_appendices?hl=en#interfaceLanguages).
+
 ## User interface
 
 <img src="https://github.com/OSINT-mindset/lingolens/assets/31013580/5c312ade-25e7-43cd-8d8e-354e6c1bdc15" width="500">
@@ -30,7 +32,21 @@ pip3 install -r requirements.txt
 
 ## Usage
 
-As CLI tool:
+### As a browser-based tool
+
+```sh
+streamlit run web_search.py
+```
+
+By default, Streamlit create a local application http://localhost:8501/. You can try to deploy it on cloud infrastructure, but Google will very quickly ask script for captcha.
+
+Then just choose the appropriate languages (mandatory) and countries (optional) and upload your image. 
+To download the report click the button "Download report"
+
+<img width="300" src="https://github.com/OSINT-mindset/lingolens/assets/31013580/af307158-9bb1-4835-af3f-751ecfac8670">
+
+### As CLI tool
+
 ```sh
 ./lingolens.py example.jpg
 
@@ -52,20 +68,6 @@ ru
 en
 pl
 ```
-
-As a browser-based tool:
-```sh
-streamlit run web_search.py
-```
-
-By default, Streamlit create a local application http://localhost:8501/. You can try to deploy it on cloud infrastructure, but Google will very quickly ask script for captcha.
-
-Then just choose the appropriate languages (mandatory) and countries (optional) and upload your image. 
-To download the report click the button "Download report"
-
-<img width="300" src="https://github.com/OSINT-mindset/lingolens/assets/31013580/af307158-9bb1-4835-af3f-751ecfac8670">
-
-The full list of supported languages and countries is [here](https://developers.google.com/custom-search/docs/xml_results_appendices?hl=en#interfaceLanguages).
 
 ## TODO
 
