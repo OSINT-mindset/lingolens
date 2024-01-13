@@ -47,10 +47,13 @@ if __name__ == '__main__':
         file_name = f'{uploaded_file.name}_lens_report_{"_".join(langs)}.html'
 
         if st.button(f'Search in Google Lens with selected languages', type="primary"):
-            report_html = main(uploaded_file.name, file_content, langs)
+            report_html, results_count = search_and_generate_report(uploaded_file.name, file_content, langs)
 
-            with open(file_name, 'w', encoding='utf-8') as file:
-                file.write(report_html)
+            if not results_count:
+                st.markdown('No results, probable issues with Google captcha, try to run tool [locally](https://github.com/OSINT-mindset/lingolens#usage).')
+            else:
+                with open(file_name, 'w', encoding='utf-8') as file:
+                    file.write(report_html)
 
-            with open(file_name) as f:
-               st.download_button('Download report', f, mime='text/html', file_name=file_name)
+                with open(file_name) as f:
+                   st.download_button(f'Download report ({results_count} results)', f, mime='text/html', file_name=file_name)

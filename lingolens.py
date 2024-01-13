@@ -179,7 +179,7 @@ def load_file_from_disk(image_file_path):
 
     return file_content
 
-def main(image_file_path, file_content, langs):
+def search_and_generate_report(image_file_path, file_content, langs):
     print(f"Starting analysis for '{image_file_path}'...")
     sleep(1.5)
     print(f"Languages for analysis: {', '.join(langs)}")
@@ -195,11 +195,16 @@ def main(image_file_path, file_content, langs):
             all_images.update(unique_images)
             print(f"Found {len(unique_images)} results for {lang.upper()} language")
 
-    target_image_uri = get_base64_image_uri(image_file_path, file_content)
-    report_html = generate_html_report(all_images, target_image_uri)
-    print("Report generated.")
+    results_count = len(all_images)
 
-    return report_html
+    if results_count:
+        target_image_uri = get_base64_image_uri(image_file_path, file_content)
+        report_html = generate_html_report(all_images, target_image_uri)
+        print("Report generated.")
+    else:
+        print("No results, probable captcha issues or search error")
+
+    return report_html, results_count
 
 
 if __name__ == '__main__':
@@ -215,7 +220,7 @@ if __name__ == '__main__':
     if not file_content:
         print(f"File not found: {image_file_path}")
     else:
-        report_html = main(filename, file_content, langs)
+        report_html, _ = search_and_generate_report(filename, file_content, langs)
 
         with open('report.html', 'w', encoding='utf-8') as file:
             file.write(report_html)
