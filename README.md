@@ -6,11 +6,18 @@ Tired of irrelevant results of reverse image search? Yeah, search results can be
 
 Lingolens allows:
 - search images in Google Lens with specific languages and countries, excluding known results
-- generate one simple HTML report with all the results
-- provide you a possibility to compare the target image with the result images
+- visually select a region of the image to search (optional)
+- generate one HTML report with all the results
+- compare the target image with the result images via a sticky preview
 - a pretty user interface is supported!
 
 The full list of supported languages and countries is [here](https://developers.google.com/custom-search/docs/xml_results_appendices?hl=en#interfaceLanguages).
+
+## How it works
+
+Google Lens used to return server-rendered HTML for the upload endpoint, so a plain `requests.post` was enough. That's no longer the case — Lens now requires a JavaScript-capable client and aggressively detects bots. So lingolens drives a real Chromium instance via [Playwright](https://playwright.dev/python/) with stealth patches and a persistent profile (cookies are reused, captcha state survives between runs).
+
+For each selected language, a fresh browser context with that `locale=` is opened. This makes the JS upload request honour the locale (`hl=ko`, `Accept-Language: ko-KR`, `navigator.language` etc.) and Google really returns different result sets across languages.
 
 ## User interface
 
@@ -24,11 +31,12 @@ Check example of search results: [report.html](report.html).
 
 ## Installation
 
-Requests and bs4 are required for the CLI version of the tool. Streamlit is required for User Interface.
-
 ```sh
 pip3 install -r requirements.txt
+playwright install chromium
 ```
+
+The second command downloads the Chromium build Playwright drives (~150 MB, one-off).
 
 ## Usage
 
@@ -38,48 +46,60 @@ pip3 install -r requirements.txt
 streamlit run web_search.py
 ```
 
-By default, Streamlit create a local application http://localhost:8501/. You can try to deploy it on cloud infrastructure, but Google will very quickly ask script for captcha.
+Streamlit serves the UI at http://localhost:8501/. Pick languages (mandatory) and countries (optional), upload an image. Optionally toggle **Select a region of the image to search** — drag a box on the image, then **double-click inside the box** to apply the crop. Then press **Search in Google Lens with selected languages**.
 
-Then just choose the appropriate languages (mandatory) and countries (optional) and upload your image. 
-To download the report click the button "Download report"
+While the search runs you'll see a live status panel with per-language progress (`KO: 33 total on page, 15 new (rest already seen)`). After it finishes you get:
 
-<img width="300" src="https://github.com/OSINT-mindset/lingolens/assets/31013580/af307158-9bb1-4835-af3f-751ecfac8670">
+- a **Download report** button (full HTML report),
+- a 3-column gallery of result thumbnails with `[LANG]` tags and links to source pages,
+- a sticky preview of the original/cropped image in the bottom-right, so you can visually compare while scrolling.
+
+#### First-run captcha
+
+The very first time Lens may show a captcha. If that happens, run once with:
+
+```sh
+LINGOLENS_HEADLESS=0 streamlit run web_search.py
+```
+
+This makes the Chromium window visible — solve the captcha manually. Cookies are stored in `~/.lingolens-profile`, so subsequent runs in default (headless) mode reuse them and shouldn't trigger captcha again.
 
 ### As CLI tool
 
 ```sh
 ./lingolens.py example.jpg
-
-Searching for example.jpg...
-Searching in RU language...
-Found 60 results
-Searching in EN language...
-Found 60 results
-Skipped 1 already known images
-Searching in PL language...
-Found 60 results
-Skipped 1 already known images
 ```
-You will get the report file in the same folder.
 
-Before you should specify languages in the file `langs.txt` in the following format:
+You will get the `report.html` file in the same folder.
+
+Languages are read from `langs.txt`, one per line:
+
 ```
 ru
 en
 pl
 ```
 
+### Environment variables
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `LINGOLENS_HEADLESS` | `1` | `0` to show the Chromium window (useful for solving captcha) |
+| `LINGOLENS_PROFILE_DIR` | `~/.lingolens-profile` | Where Playwright stores its persistent profile (cookies, captcha state) |
+
 ## TODO
 
 - [x] Customization of language list for a search (simple config file)
 - [x] Language filter in a report
+- [x] Visual region selection (crop)
+- [x] Inline gallery and sticky original preview in the Streamlit UI
 - [ ] Standalone exe-file for Windows
 - [ ] Checkbox for switching to thumbnails instead of full images
 - [ ] Validation of lang-country combinations
+- [ ] Automatic captcha-solving fallback
 
 ## Credits
 
 Thanks to BLACK for inspiration and support!
 
 Designed and developed for solving tasks on [OSINT investigation forum](https://t.me/+GMxoDCvLO0k0MWRi).
-

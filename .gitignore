@@ -127,3 +127,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# lingolens: generated search reports
+*_lens_report*.html
+
+# lingolens: Playwright persistent profile (kept outside repo by default,
+# but ignore here in case LINGOLENS_PROFILE_DIR points inside the repo)
+.lingolens-profile/
