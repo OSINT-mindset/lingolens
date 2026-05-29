@@ -1,72 +1,180 @@
 #!/usr/bin/env python3
+import atexit
+import json
 import os
 import sys
-from time import time, sleep
 from base64 import b64encode
-from requests import post
+from collections import namedtuple
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse, parse_qs, unquote, quote
+from playwright.sync_api import sync_playwright
+from playwright_stealth import Stealth
+
+
+SearchResult = namedtuple(
+    'SearchResult',
+    ['report_html', 'results_count', 'image_data', 'lang_stats'],
+)
+LangStat = namedtuple('LangStat', ['lang', 'total', 'new'])
+
+
+LENS_PROFILE_DIR = os.environ.get(
+    'LINGOLENS_PROFILE_DIR', os.path.expanduser('~/.lingolens-profile')
+)
+LENS_HEADLESS = os.environ.get('LINGOLENS_HEADLESS', '1') == '1'
+LENS_USER_AGENT = (
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+    'AppleWebKit/537.36 (KHTML, like Gecko) '
+    'Chrome/124.0.0.0 Safari/537.36'
+)
+
+_LENS_STATE = {'stealth_cm': None, 'pw': None, 'ctx': None, 'locale': None}
+
+
+def _clear_stale_chromium_lock(profile_dir):
+    for name in ('SingletonLock', 'SingletonCookie', 'SingletonSocket'):
+        path = os.path.join(profile_dir, name)
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+
+
+def _mark_profile_exited_cleanly(profile_dir):
+    """Suppress Chrome's "profile didn't exit cleanly" modal by patching prefs."""
+    prefs_path = os.path.join(profile_dir, 'Default', 'Preferences')
+    if not os.path.exists(prefs_path):
+        return
+    try:
+        with open(prefs_path) as f:
+            prefs = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return
+    profile = prefs.setdefault('profile', {})
+    if profile.get('exit_type') == 'Normal' and profile.get('exited_cleanly') is True:
+        return
+    profile['exit_type'] = 'Normal'
+    profile['exited_cleanly'] = True
+    try:
+        with open(prefs_path, 'w') as f:
+            json.dump(prefs, f)
+    except OSError:
+        pass
+
+
+def _open_lens_context(locale):
+    _clear_stale_chromium_lock(LENS_PROFILE_DIR)
+    _mark_profile_exited_cleanly(LENS_PROFILE_DIR)
+    cm = Stealth().use_sync(sync_playwright())
+    pw = cm.__enter__()
+    ctx = pw.chromium.launch_persistent_context(
+        user_data_dir=LENS_PROFILE_DIR,
+        headless=LENS_HEADLESS,
+        args=[
+            '--disable-blink-features=AutomationControlled',
+            '--disable-session-crashed-bubble',
+            '--hide-crash-restore-bubble',
+            '--no-first-run',
+        ],
+        user_agent=LENS_USER_AGENT,
+        locale=locale,
+        viewport={'width': 1280, 'height': 900},
+    )
+    _LENS_STATE.update(stealth_cm=cm, pw=pw, ctx=ctx, locale=locale)
+    return ctx
+
+
+def _ensure_lens_context(locale):
+    if _LENS_STATE['ctx'] is None or _LENS_STATE['locale'] != locale:
+        close_lens_context()
+        return _open_lens_context(locale)
+    return _LENS_STATE['ctx']
+
+
+def close_lens_context():
+    ctx = _LENS_STATE.get('ctx')
+    cm = _LENS_STATE.get('stealth_cm')
+    if ctx is not None:
+        try:
+            ctx.close()
+        except Exception:
+            pass
+    if cm is not None:
+        try:
+            cm.__exit__(None, None, None)
+        except Exception:
+            pass
+    _LENS_STATE.update(stealth_cm=None, pw=None, ctx=None, locale=None)
+
+
+atexit.register(close_lens_context)
 
 
 def post_image_and_get_response_html(image_file_path, file_content, lang):
-    headers = {
-        'Cookie': 'NID=511=eoiYVbD3qecDKQrHrtT9_jFCqvrNnL-GSi7lPJANAlHOoYlZOhFjOhPvcc'
-                  '-43ZSGmBx_L5D_Irknb8HJvUMo41sCh1i0homN3Taqg2z7mdjnu3AQe-PbpKAyKE4zW1'
-                  '-N6niKTJAMkV6Jq4AWPwp6txH_c24gjt7fU3LWAfNIezA'
-    }
-    timestamp = int(time() * 1000)
-    url = f'https://lens.google.com/v3/upload?hl={lang}&re=df&stcs={timestamp}&vpw=1500&vph=1500'
+    ctx = _ensure_lens_context(lang)
+    page = ctx.new_page()
+    try:
+        page.goto(f'https://lens.google.com/?hl={lang}',
+                  wait_until='domcontentloaded', timeout=30000)
+        page.wait_for_selector('input[type="file"][name="encoded_image"]',
+                               state='attached', timeout=15000)
+        page.locator('input[type="file"][name="encoded_image"]').first.set_input_files({
+            'name': os.path.basename(image_file_path) or 'upload.jpg',
+            'mimeType': 'image/jpeg',
+            'buffer': file_content,
+        })
+        try:
+            page.wait_for_url('**/search**', timeout=30000)
+        except Exception:
+            pass
 
-    files = {'encoded_image': (image_file_path, file_content, 'image/jpeg')}
-    response = post(url, files=files)
+        if '/sorry/' in page.url:
+            print('Captcha detected. Solve it once in the opened browser '
+                  '(LINGOLENS_HEADLESS=0) — the persistent profile will keep cookies.')
+            return None
 
-    return response.text if response.status_code == 200 else None
+        try:
+            page.wait_for_selector('div.kb0PBd.cvP2Ce a[href]', timeout=20000)
+        except Exception:
+            pass
+        page.wait_for_timeout(1500)
+
+        return page.content()
+    finally:
+        page.close()
 
 
 def extract_image_urls(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
-    divs = soup.find_all('div', class_='Vd9M6')
+    cards = soup.select('div.kb0PBd.cvP2Ce')
 
-    if not divs:
-        print("Error: The expected content is not found on the page. This might be due to a change in the website's "
-              "layout. Please report this issue for further assistance.")
+    if not cards:
+        print("Error: No result cards found. Lens DOM may have changed again.")
         return []
 
-    problematic_domains = ['yandex.com', 'yandex.ru', 'instagram.com', 'facebook.com', 'fbsbx.com', 'tiktok.com']
-
     image_urls = []
-    for div in divs:
-        action_url = div.get('data-action-url')
-        if action_url:
-            parsed_url = urlparse(action_url)
-            query_params = parse_qs(parsed_url.query)
-            img_url = unquote(query_params.get('imgurl', [None])[0])
-            img_ref_url = unquote(query_params.get('imgrefurl', [None])[0])
-
-            img_is_problematic = any([p in img_url for p in problematic_domains])
-            if img_url.startswith('x-raw-image') or img_is_problematic:
-                div_thumb = div.find(lambda tag:tag.name == "div" and 'data-thumbnail-url' in tag.attrs)
-                img_url = div_thumb.get('data-thumbnail-url')
-
-            image_urls.append((img_url, img_ref_url))
+    seen_refs = set()
+    for card in cards:
+        a = card.find('a', href=True)
+        img = card.find('img', class_='VeBrne')
+        if not (a and img):
+            continue
+        img_ref_url = a['href']
+        if img_ref_url in seen_refs:
+            continue
+        seen_refs.add(img_ref_url)
+        img_url = img.get('src') or ''
+        image_urls.append((img_url, img_ref_url))
 
     return image_urls
-
-
-def normalize_url(url):
-    parsed_url = urlparse(url)
-    url_path = os.path.dirname(parsed_url.path)
-    normalized_path = quote(url_path)
-    normalized_url = f'{parsed_url.scheme}://{parsed_url.netloc}{normalized_path}'
-    return normalized_url
 
 
 def filter_unique_images(image_urls, processed_urls, lang):
     unique_images = []
     for img_url, img_ref_url in image_urls:
-        normalized_url = normalize_url(img_url)
-        if normalized_url not in processed_urls:
-            processed_urls.add(normalized_url)
+        if img_ref_url not in processed_urls:
+            processed_urls.add(img_ref_url)
             unique_images.append((img_url, img_ref_url, lang))
     return unique_images
 
@@ -179,32 +287,46 @@ def load_file_from_disk(image_file_path):
 
     return file_content
 
-def search_and_generate_report(image_file_path, file_content, langs):
+def search_and_generate_report(image_file_path, file_content, langs, on_lang=None):
     print(f"Starting analysis for '{image_file_path}'...")
-    sleep(1.5)
     print(f"Languages for analysis: {', '.join(langs)}")
 
     processed_urls = set()
-    all_images = set()
+    image_data = []
+    lang_stats = []
 
     for lang in langs:
         html_content = post_image_and_get_response_html(image_file_path, file_content, lang)
+        total = new = 0
         if html_content:
             image_urls = extract_image_urls(html_content)
             unique_images = filter_unique_images(image_urls, processed_urls, lang)
-            all_images.update(unique_images)
-            print(f"Found {len(unique_images)} results for {lang.upper()} language")
+            image_data.extend(unique_images)
+            total = len(image_urls)
+            new = len(unique_images)
+        stat = LangStat(lang=lang, total=total, new=new)
+        lang_stats.append(stat)
+        print(f"{lang.upper()}: {total} total on page, {new} new "
+              "(others already seen via earlier langs)")
+        if on_lang is not None:
+            on_lang(stat)
 
-    results_count = len(all_images)
+    results_count = len(image_data)
+    report_html = None
 
     if results_count:
         target_image_uri = get_base64_image_uri(image_file_path, file_content)
-        report_html = generate_html_report(all_images, target_image_uri)
+        report_html = generate_html_report(image_data, target_image_uri)
         print("Report generated.")
     else:
         print("No results, probable captcha issues or search error")
 
-    return report_html, results_count
+    return SearchResult(
+        report_html=report_html,
+        results_count=results_count,
+        image_data=image_data,
+        lang_stats=lang_stats,
+    )
 
 
 if __name__ == '__main__':
@@ -218,11 +340,12 @@ if __name__ == '__main__':
     langs = read_langs('langs.txt') or ['ru', 'en', 'pl']
 
     if not file_content:
-        print(f"File not found: {image_file_path}")
+        print(f"File not found: {filename}")
     else:
-        report_html, _ = search_and_generate_report(filename, file_content, langs)
+        result = search_and_generate_report(filename, file_content, langs)
 
-        with open('report.html', 'w', encoding='utf-8') as file:
-            file.write(report_html)
+        if result.report_html:
+            with open('report.html', 'w', encoding='utf-8') as file:
+                file.write(result.report_html)
 
     print("Script execution completed.")
